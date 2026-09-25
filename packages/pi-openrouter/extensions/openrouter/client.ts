@@ -51,7 +51,8 @@ export async function fetchUserModels(): Promise<ModelsListResponse> {
   try {
     const sdkClient = new OpenRouter({ apiKey: key });
     const response = await sdkClient.models.listForUser({ bearer: key }, {});
-    return response as ModelsListResponse;
+    const payload = 'result' in response ? response.result : (response as ModelsListResponse);
+    return payload as ModelsListResponse;
   } catch (err: unknown) {
     throw mapSdkError(err);
   }

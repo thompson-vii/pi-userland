@@ -1,5 +1,11 @@
 # pi-openrouter
-
+[!NOTE]
+Repo has a local edit and is not published on npm, npm does not support installing from subfolder locally does not handle dependency. 
+```git clone this repo
+pi install ./pi-userland/packages/pi-openrouter
+cd into pi-openrouter
+pnpm install 
+```
 A [Pi](https://pi.dev/) extension for live OpenRouter visibility and environment sync: usage/account TUI overlays, automatic session_id tagging, full or free-only model catalog sync, API key management, and local model field overrides.
 
 ## Installation

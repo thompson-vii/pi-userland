@@ -3,6 +3,10 @@ import type { GetCreditsResponse } from '@openrouter/sdk/models/operations/index
 import { OpenRouter } from '@openrouter/sdk/sdk/sdk.js';
 import type { ModelsListResponse } from '@openrouter/sdk/models/index.js';
 import { UnauthorizedResponseError } from '@openrouter/sdk/models/errors/index.js';
+import { execSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 let client: OpenRouter | null = null;
 
@@ -65,6 +69,100 @@ export function isConfigured(): boolean {
   return !!getApiKey();
 }
 
+const AUTH_FILENAME = 'auth.json';
+const STORED_KEY_COMMAND_TIMEOUT_MS = 10_000;
+
+let commandKeyCache: { command: string; value: string | undefined } | null = null;
+
+function getAuthFilePath(): string {
+  // Honor the same agent-directory override Pi itself supports.
+  const agentDir =
+    process.env['PI_CODING_AGENT_DIR'] ?? join(homedir(), '.pi', 'agent');
+  return join(agentDir, AUTH_FILENAME);
+}
+
+function nonEmpty(value: string | undefined): string | undefined {
+  return value !== undefined && value.trim() !== '' ? value : undefined;
+}
+
+/**
+ * Resolve a stored key value, running `!command` entries once per process and
+ * caching their trimmed stdout, mirroring Pi's own credential resolution.
+ */
+function resolveStoredKeyValue(rawKey: string): string | undefined {
+  const key = rawKey.trim();
+  if (!key) return undefined;
+  if (!key.startsWith('!')) return key;
+
+  const command = key.slice(1);
+  if (commandKeyCache?.command === command) {
+    return commandKeyCache.value;
+  }
+
+  let value: string | undefined;
+  try {
+    const output = execSync(command, {
+      encoding: 'utf-8',
+      timeout: STORED_KEY_COMMAND_TIMEOUT_MS,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    value = output !== '' ? output : undefined;
+  } catch {
+    value = undefined;
+  }
+
+  commandKeyCache = { command, value };
+  return value;
+}
+
+/**
+ * Read the OpenRouter API key stored by Pi's `/login` flow in auth.json.
+ *
+ * Supports plain keys and command-sourced keys (`"!command"`), plus the
+ * provider-scoped `env` object. Returns undefined when auth.json, the
+ * `openrouter` credential, or its key is missing or unreadable.
+ */
+export function getStoredOpenRouterKey(): string | undefined {
+  try {
+    const authPath = getAuthFilePath();
+    if (!existsSync(authPath)) return undefined;
+
+    const parsed = JSON.parse(readFileSync(authPath, 'utf-8')) as {
+      openrouter?: {
+        type?: unknown;
+        key?: unknown;
+        env?: Record<string, unknown>;
+      };
+    };
+
+    const credential = parsed?.openrouter;
+    if (!credential || credential.type !== 'api_key') return undefined;
+
+    // Provider-scoped env values take priority over the credential's key.
+    const envKey = credential.env?.['OPENROUTER_API_KEY'];
+    const candidate =
+      typeof envKey === 'string' && envKey.trim() !== ''
+        ? envKey
+        : typeof credential.key === 'string'
+          ? credential.key
+          : undefined;
+
+    return candidate !== undefined ? resolveStoredKeyValue(candidate) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Resolve an OpenRouter key from the process environment.
+ * `preferManagement` selects the usage/account ordering.
+ */
+function resolveEnvKey(preferManagement: boolean): string | undefined {
+  const apiKey = nonEmpty(process.env['OPENROUTER_API_KEY']);
+  const mgmtKey = nonEmpty(process.env['OPENROUTER_MANAGEMENT_KEY']);
+  return preferManagement ? (mgmtKey ?? apiKey) : (apiKey ?? mgmtKey);
+}
+
 /**
  * Get the OpenRouter API key from environment.
  */
@@ -75,31 +173,19 @@ export function getApiKey(): string | undefined {
 /**
  * Get the API key for usage/account endpoints.
  * Prefers OPENROUTER_MANAGEMENT_KEY for full analytics access.
+ * Falls back to the credential stored by Pi in auth.json.
  */
 export function getUsageApiKey(): string | undefined {
-  const mgmtKey = process.env['OPENROUTER_MANAGEMENT_KEY'];
-  const apiKey = process.env['OPENROUTER_API_KEY'];
-  // Treat empty strings as absent
-  return mgmtKey && mgmtKey.trim() !== ''
-    ? mgmtKey
-    : apiKey && apiKey.trim() !== ''
-      ? apiKey
-      : undefined;
+  return resolveEnvKey(true) ?? getStoredOpenRouterKey();
 }
 
 /**
  * Get the API key for model sync endpoint.
- * Prefers OPENROUTER_API_KEY but falls back to OPENROUTER_MANAGEMENT_KEY.
+ * Prefers OPENROUTER_API_KEY but falls back to OPENROUTER_MANAGEMENT_KEY,
+ * then to the credential stored by Pi in auth.json.
  */
 export function getModelSyncApiKey(): string | undefined {
-  const apiKey = process.env['OPENROUTER_API_KEY'];
-  const mgmtKey = process.env['OPENROUTER_MANAGEMENT_KEY'];
-  // Treat empty strings as absent
-  return apiKey && apiKey.trim() !== ''
-    ? apiKey
-    : mgmtKey && mgmtKey.trim() !== ''
-      ? mgmtKey
-      : undefined;
+  return resolveEnvKey(false) ?? getStoredOpenRouterKey();
 }
 
 /**

@@ -7,6 +7,8 @@
 
 import type { OpenRouterModel, ModelsCache, PiModelConfig } from '../models/types.js';
 import type { ActivityItem } from '@openrouter/sdk/models/index.js';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 // =============================================================================
 // Environment Helpers
@@ -24,6 +26,8 @@ const originalEnvSnapshot: Record<string, string | undefined> = { ...process.env
  */
 export function restoreEnv(): void {
   process.env = { ...originalEnvSnapshot };
+  // Isolate tests from the real user's Pi agent directory (auth.json, settings.json).
+  process.env['PI_CODING_AGENT_DIR'] = join(tmpdir(), 'pi-openrouter-test-agent-dir');
 }
 
 /**

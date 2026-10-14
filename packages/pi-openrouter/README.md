@@ -18,7 +18,9 @@ pi install npm:@robhowley/pi-openrouter
 
 ## Requirements
 
-Set one of these environment variables:
+Provide an OpenRouter key in one of two ways.
+
+**Option 1 - environment variable (highest priority):**
 
 - `OPENROUTER_MANAGEMENT_KEY` (preferred) — provides full usage/analytics and can be used for model sync
 - `OPENROUTER_API_KEY` — basic usage data and user-scoped model sync
@@ -27,10 +29,12 @@ Set one of these environment variables:
 export OPENROUTER_MANAGEMENT_KEY=sk-or-...
 ```
 
+**Option 2 - Pi's stored credential:** if neither environment variable is set, the extension falls back to the `openrouter` credential saved by `pi /login` in `<agent-dir>/auth.json`. Command-sourced keys (`"!command"`) and the credential's provider-scoped `env` object are supported.
+
 **Key selection:**
 
-- Usage/account commands prefer `OPENROUTER_MANAGEMENT_KEY` for full analytics, falling back to `OPENROUTER_API_KEY`
-- Model sync prefers `OPENROUTER_API_KEY` but will attempt `OPENROUTER_MANAGEMENT_KEY` if only that is set
+- Usage/account commands prefer `OPENROUTER_MANAGEMENT_KEY` for full analytics, falling back to `OPENROUTER_API_KEY`, then the stored credential
+- Model sync prefers `OPENROUTER_API_KEY` but will attempt `OPENROUTER_MANAGEMENT_KEY` if only that is set, then the stored credential
 
 ## Commands
 

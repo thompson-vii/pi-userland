@@ -763,7 +763,36 @@ describe('registerOpenRouterCommands', () => {
       await commands.get('openrouter').handler('models-sync', ctx);
 
       expect(ctx.ui.notify).toHaveBeenCalledWith(
-        'OpenRouter models refresh failed\nUsing last successful free-only catalog · cache age: 5m',
+        'OpenRouter models refresh failed\nError: API timeout\nUsing last successful free-only catalog · cache age: 5m',
+        'warning',
+      );
+    });
+
+    it('omits the error line when the cache fallback has no error', async () => {
+      const { commands, pi } = createMockPi();
+      const ctx = createMockContext();
+
+      mocks.getActiveCatalogState.mockReturnValue(
+        createActiveCatalogState({
+          mode: 'full',
+          registeredModelIds: ['provider/a'],
+          registeredCount: 1,
+        }),
+      );
+      mocks.syncModels.mockResolvedValue({
+        success: false,
+        source: 'cache',
+        registeredCount: 1,
+        cacheAgeMs: 60000,
+        error: null,
+      });
+      mocks.formatDuration.mockReturnValue('1m');
+
+      registerOpenRouterCommands(pi as any);
+      await commands.get('openrouter').handler('models-sync', ctx);
+
+      expect(ctx.ui.notify).toHaveBeenCalledWith(
+        'OpenRouter models refresh failed\nUsing last successful full catalog · cache age: 1m',
         'warning',
       );
     });

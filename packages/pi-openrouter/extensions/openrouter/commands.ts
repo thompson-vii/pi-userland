@@ -228,8 +228,9 @@ async function handleModelsSyncCommand(
         result,
         activeCatalogState?.mode ?? requestedMode,
       );
+      const errorLine = result.error ? `\nError: ${result.error}` : '';
       ctx.ui.notify(
-        `OpenRouter models refresh failed\nUsing last successful ${getCatalogModeLabel(activeCatalogMode)} · cache age: ${formatDuration(result.cacheAgeMs)}`,
+        `OpenRouter models refresh failed${errorLine}\nUsing last successful ${getCatalogModeLabel(activeCatalogMode)} · cache age: ${formatDuration(result.cacheAgeMs)}`,
         'warning',
       );
       return;

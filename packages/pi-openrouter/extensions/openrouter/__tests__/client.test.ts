@@ -5,12 +5,16 @@ import {
   getApiKey,
   getModelSyncApiKey,
   getUsageApiKey,
+  getStoredOpenRouterKey,
   isConfiguredForModelSync,
   isConfiguredForUsage,
   ApiError,
   AuthError,
 } from '../client.js';
 import { restoreEnv } from './fixtures.js';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Mock } from 'vitest';
 
 // Mock SDK at the module level
@@ -483,5 +487,86 @@ describe('getCredits with usage API key selection', () => {
     const { getCredits } = await import('../client.js');
     const result = await getCredits();
     expect(result).toBeNull();
+  });
+});
+
+describe('auth.json credential fallback', () => {
+  let authDir: string;
+
+  function writeAuthFile(content: unknown) {
+    writeFileSync(join(authDir, 'auth.json'), JSON.stringify(content), 'utf-8');
+  }
+
+  beforeEach(() => {
+    restoreEnv();
+    setKeys(undefined, undefined);
+    authDir = mkdtempSync(join(tmpdir(), 'pi-openrouter-auth-'));
+    process.env['PI_CODING_AGENT_DIR'] = authDir;
+  });
+
+  it('returns the stored api key when no env keys are set', () => {
+    writeAuthFile({ openrouter: { type: 'api_key', key: 'stored-key' } });
+    expect(getStoredOpenRouterKey()).toBe('stored-key');
+    expect(getModelSyncApiKey()).toBe('stored-key');
+    expect(getUsageApiKey()).toBe('stored-key');
+    expect(isConfiguredForModelSync()).toBe(true);
+    expect(isConfiguredForUsage()).toBe(true);
+  });
+
+  it('prefers env keys over the stored credential', () => {
+    writeAuthFile({ openrouter: { type: 'api_key', key: 'stored-key' } });
+    setKeys('env-api-key', undefined);
+    expect(getModelSyncApiKey()).toBe('env-api-key');
+  });
+
+  it('uses the provider-scoped env value when present', () => {
+    writeAuthFile({
+      openrouter: {
+        type: 'api_key',
+        key: 'stored-key',
+        env: { OPENROUTER_API_KEY: 'env-in-credential' },
+      },
+    });
+    expect(getStoredOpenRouterKey()).toBe('env-in-credential');
+  });
+
+  it('ignores non-api_key credentials', () => {
+    writeAuthFile({ openrouter: { type: 'oauth', key: 'stored-key' } });
+    expect(getStoredOpenRouterKey()).toBeUndefined();
+  });
+
+  it('ignores a whitespace-only stored key', () => {
+    writeAuthFile({ openrouter: { type: 'api_key', key: '   ' } });
+    expect(getStoredOpenRouterKey()).toBeUndefined();
+  });
+
+  it('ignores malformed auth.json', () => {
+    writeFileSync(join(authDir, 'auth.json'), '{ not json', 'utf-8');
+    expect(getStoredOpenRouterKey()).toBeUndefined();
+  });
+
+  it('returns undefined when auth.json is missing', () => {
+    expect(getStoredOpenRouterKey()).toBeUndefined();
+  });
+
+  it('resolves a command-sourced key', () => {
+    writeAuthFile({
+      openrouter: {
+        type: 'api_key',
+        key: `!"${process.execPath}" -e "process.stdout.write('cmd-key')"`,
+      },
+    });
+    expect(getStoredOpenRouterKey()).toBe('cmd-key');
+    expect(getModelSyncApiKey()).toBe('cmd-key');
+  });
+
+  it('returns undefined when a command-sourced key fails', () => {
+    writeAuthFile({
+      openrouter: {
+        type: 'api_key',
+        key: `!"${process.execPath}" -e "process.exit(1)"`,
+      },
+    });
+    expect(getStoredOpenRouterKey()).toBeUndefined();
   });
 });
